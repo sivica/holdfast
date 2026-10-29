@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 
 from fastapi.testclient import TestClient
@@ -119,6 +120,27 @@ def test_metrics_endpoints(deps, book) -> None:
     assert "holdfast_llm_call_latency_seconds_count 1\n" in page
     assert 'holdfast_llm_call_latency_seconds_bucket{le="+Inf"} 1\n' in page
     assert page.endswith("\n")
+
+
+def test_prefixed_counter_names_are_not_doubled_and_strings_are_skipped(deps, caplog) -> None:
+    from hlguard.store import update_json
+
+    deps.metrics.inc("holdfast_extra")
+
+    def put(data: dict) -> dict:
+        data["note"] = "not-a-counter"
+        return data
+
+    update_json(deps.metrics.path, {}, put)
+    with caplog.at_level(logging.DEBUG, logger="hlguard.metrics"):
+        snap = deps.metrics.snapshot()
+        text = deps.metrics.render_prometheus()
+    assert snap["holdfast_extra"] == 1
+    assert "note" not in snap
+    assert "holdfast_extra_total 1\n" in text
+    assert "holdfast_holdfast_extra_total" not in text
+    assert "not-a-counter" not in text
+    assert "skipping non-numeric metric note" in caplog.text
 
 
 def _assert_names(text: str) -> None:

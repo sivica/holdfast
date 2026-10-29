@@ -189,7 +189,13 @@ def _plan_card(proposal: dict | None, token: str) -> str:
         ("stop", None if not plan else plan.get("stop_loss")),
         ("max loss", None if not plan else plan.get("max_loss_usd")),
         ("hash", proposal.get("plan_hash") or "—"),
+        ("llm", proposal.get("llm") or "—"),
+        ("served by", proposal.get("served_by") or "—"),
+        ("tokens", _token_line(proposal)),
+        ("cost usd", "omitted" if proposal.get("cost_usd") is None else proposal.get("cost_usd")),
     ]
+    if proposal.get("fallback_reason"):
+        rows.append(("fallback", proposal.get("fallback_reason")))
     body = ["<dl class='kvs'>"]
     for label, value in rows:
         shown = "—" if value is None else str(value)
@@ -323,6 +329,14 @@ def _audit(context: dict) -> str:
     else:
         lines.append("</ul></div>")
     return "".join(lines)
+
+
+def _token_line(proposal: dict) -> str:
+    incoming = proposal.get("input_tokens")
+    outgoing = proposal.get("output_tokens")
+    if incoming is None and outgoing is None:
+        return "—"
+    return f"{incoming} in / {outgoing} out"
 
 
 def _fill_text(fill: dict) -> str:

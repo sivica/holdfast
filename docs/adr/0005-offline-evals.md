@@ -14,4 +14,4 @@ The score is not a claim about trading skill.
 
 ## Consequences
 
-Swapping in `OpenAIProvider` is a separate experiment. It is not required for CI, and it is not what the baseline measures.
+Swapping in `OpenAIProvider`, `AnthropicProvider`, or `RouterProvider` is a separate experiment. It is not required for CI, and it is not what the baseline measures. The default analyst remains `GuardedMock`.

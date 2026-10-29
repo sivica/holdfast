@@ -1,8 +1,19 @@
+"""Process metrics stored in one JSON file.
+
+Counters are integers. `llm_cost_usd` is a float running total. Histogram state
+lives under `_histograms` and is omitted from `snapshot()`. Non-numeric values
+are not exported: they are skipped, and a debug log names the key.
+"""
+
 from __future__ import annotations
 
+import logging
+from decimal import Decimal
 from pathlib import Path
 
 from hlguard.store import read_json, update_json
+
+_LOG = logging.getLogger("hlguard.metrics")
 
 # Upper bounds for holdfast_llm_call_latency_seconds, in seconds.
 # The +Inf bucket is the observation count and is not stored here.
@@ -37,6 +48,10 @@ _COUNTER_HELP: tuple[tuple[str, str], ...] = (
     ("holds", "Hold decisions."),
 )
 
+_FLOAT_HELP: dict[str, str] = {
+    "llm_cost_usd": "Running total of example LLM cost in USD. Not a bill.",
+}
+
 _TOOLS: tuple[str, ...] = (
     "get_account",
     "get_market",
@@ -60,6 +75,18 @@ class Metrics:
             return data
 
         update_json(self.path, {}, add)
+
+    def add_decimal(self, name: str, amount: Decimal) -> None:
+        def apply(data: dict) -> dict:
+            try:
+                current = Decimal(str(data.get(name, "0")))
+            except (ArithmeticError, ValueError):
+                current = Decimal("0")
+            total = (current + amount).quantize(Decimal("0.0000000001"))
+            data[name] = float(total)
+            return data
+
+        update_json(self.path, {}, apply)
 
     def observe(self, name: str, value: float) -> None:
         """Record one observation for a latency histogram. Counters are untouched."""
@@ -89,16 +116,22 @@ class Metrics:
 
         update_json(self.path, {}, add)
 
-    def snapshot(self) -> dict[str, int]:
-        return _counters(read_json(self.path, {}))
+    def snapshot(self) -> dict[str, int | float]:
+        ints, floats = _numbers(read_json(self.path, {}))
+        merged: dict[str, int | float] = {}
+        merged.update(ints)
+        merged.update(floats)
+        return dict(sorted(merged.items()))
 
     def render_prometheus(self) -> str:
         raw = read_json(self.path, {})
         if not isinstance(raw, dict):
             raw = {}
+        ints, floats = _numbers(raw)
         lines: list[str] = []
-        lines.extend(_counter_lines(_counters(raw)))
-        lines.extend(_tool_lines(_counters(raw)))
+        lines.extend(_counter_lines(ints))
+        lines.extend(_float_counter_lines(floats))
+        lines.extend(_tool_lines(ints))
         lines.extend(_histogram_lines(raw.get("_histograms")))
         return "\n".join(lines) + "\n"
 
@@ -107,17 +140,27 @@ def content_type() -> str:
     return _CONTENT_TYPE
 
 
-def _counters(raw: object) -> dict[str, int]:
+def _numbers(raw: object) -> tuple[dict[str, int], dict[str, float]]:
+    """Split stored values into integer counters and float counters.
+
+    Keys starting with `_` are internal (histogram state) and are skipped.
+    Strings and other non-numeric values are skipped with a debug log.
+    """
     if not isinstance(raw, dict):
-        return {}
-    counters: dict[str, int] = {}
+        return {}, {}
+    ints: dict[str, int] = {}
+    floats: dict[str, float] = {}
     for key, value in raw.items():
         if not isinstance(key, str) or key.startswith("_"):
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
+            _LOG.debug("skipping non-numeric metric %s (%s)", key, type(value).__name__)
             continue
-        counters[key] = int(value)
-    return dict(sorted(counters.items()))
+        if isinstance(value, int):
+            ints[key] = value
+        else:
+            floats[key] = float(value)
+    return dict(sorted(ints.items())), dict(sorted(floats.items()))
 
 
 def _counter_lines(counters: dict[str, int]) -> list[str]:
@@ -128,6 +171,22 @@ def _counter_lines(counters: dict[str, int]) -> list[str]:
     extras = sorted(key for key in counters if key not in known and not key.startswith("tool."))
     for name in extras:
         lines.extend(_counter_family(_metric_name(name), f"Holdfast counter {name}.", counters[name]))
+    return lines
+
+
+def _float_counter_lines(counters: dict[str, float]) -> list[str]:
+    lines: list[str] = []
+    for name in sorted(counters):
+        help_text = _FLOAT_HELP.get(name, f"Holdfast counter {name}.")
+        metric = _metric_name(name)
+        lines.extend(
+            [
+                f"# HELP {metric} {_escape_help(help_text)}",
+                f"# TYPE {metric} counter",
+                f"{metric} {_format_number(counters[name])}",
+                "",
+            ]
+        )
     return lines
 
 
@@ -189,7 +248,10 @@ def _counter_family(metric: str, help_text: str, value: int) -> list[str]:
 
 
 def _metric_name(name: str) -> str:
-    return f"holdfast_{_slug(name)}_total"
+    slug = _slug(name)
+    if slug.startswith("holdfast_"):
+        slug = slug.removeprefix("holdfast_") or "unknown"
+    return f"holdfast_{slug}_total"
 
 
 def _histogram_name(name: str) -> str:

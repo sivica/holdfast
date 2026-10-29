@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from decimal import Decimal
 
 from hlguard.approval import nonce_of
-from hlguard.errors import ApprovalError, MarketError, ParseError, PolicyError
-from hlguard.llm import LLMProvider
+from hlguard.errors import ApprovalError, LLMError, MarketError, ParseError, PolicyError
+from hlguard.llm import Completion, LLMProvider, as_completion
 from hlguard.market import write_market
 from hlguard.mcp_client import execute, research
 from hlguard.models import NewsItem, Snapshot, parse_proposal, proposal_from_canonical
 from hlguard.news import write_news
 from hlguard.policy import evaluate
+from hlguard.pricing import quote_usd
 from hlguard.redact import redact
 from hlguard.runtime import Deps, get_proposal, save_proposal, update_proposal
 from hlguard.tracing import configure_tracing, tracer
@@ -113,12 +115,16 @@ def run_cycle(
             labels,
             format(deps.settings.max_notional_usd, "f"),
         )
-        with tracer().start_as_current_span("holdfast.llm"):
+        with tracer().start_as_current_span("holdfast.llm") as llm_span:
             started = time.perf_counter()
             try:
-                raw = provider.complete(messages)
-            finally:
+                completion = as_completion(provider.complete(messages))
+            except LLMError as exc:
                 deps.metrics.observe("llm_call_latency_seconds", time.perf_counter() - started)
+                llm_span.set_attribute("holdfast.llm.error", redact(str(exc))[:500])
+                raise
+            cost = _observe_llm(llm_span, deps, completion)
+            raw = completion.text
         record = _decide_proposal(
             deps,
             raw=raw,
@@ -126,6 +132,11 @@ def run_cycle(
             account=account_body,
             focus=focus,
             llm_name=llm_name,
+            served_by=completion.provider,
+            fallback_reason=completion.fallback_reason,
+            input_tokens=int(completion.usage.input_tokens),
+            output_tokens=int(completion.usage.output_tokens),
+            cost_usd=cost,
             labels=labels,
             trace_id=trace_id,
             tools=payload["tools"],
@@ -205,6 +216,41 @@ def interpret_decision(text: str | None) -> str:
     return "reject"
 
 
+def _observe_llm(span, deps: Deps, completion: Completion) -> Decimal | None:
+    usage = completion.usage
+    span.set_attribute("gen_ai.operation.name", "chat")
+    if usage.system:
+        span.set_attribute("gen_ai.system", usage.system)
+        span.set_attribute("gen_ai.provider.name", usage.system)
+    if usage.model:
+        span.set_attribute("gen_ai.request.model", usage.model)
+    if usage.response_model:
+        span.set_attribute("gen_ai.response.model", usage.response_model)
+    span.set_attribute("gen_ai.usage.input_tokens", int(usage.input_tokens))
+    span.set_attribute("gen_ai.usage.output_tokens", int(usage.output_tokens))
+    if usage.response_id:
+        span.set_attribute("gen_ai.response.id", usage.response_id)
+    if usage.finish_reason:
+        span.set_attribute("gen_ai.response.finish_reasons", [usage.finish_reason])
+    if usage.temperature is not None:
+        span.set_attribute("gen_ai.request.temperature", float(usage.temperature))
+    if usage.max_tokens is not None:
+        span.set_attribute("gen_ai.request.max_tokens", int(usage.max_tokens))
+    span.set_attribute("holdfast.llm.latency_ms", float(usage.latency_ms))
+    span.set_attribute("holdfast.llm.provider", completion.provider)
+    span.set_attribute("holdfast.llm.fallback", bool(completion.fallback_reason))
+    if completion.fallback_reason:
+        span.set_attribute("holdfast.llm.fallback_reason", completion.fallback_reason)
+    deps.metrics.observe("llm_call_latency_seconds", max(0.0, float(usage.latency_ms)) / 1000.0)
+    deps.metrics.inc("llm_input_tokens", int(usage.input_tokens))
+    deps.metrics.inc("llm_output_tokens", int(usage.output_tokens))
+    cost = quote_usd(usage.model, usage.response_model, usage.input_tokens, usage.output_tokens)
+    deps.metrics.add_decimal("llm_cost_usd", Decimal("0") if cost is None else cost)
+    if cost is not None:
+        span.set_attribute("holdfast.cost_usd", float(cost))
+    return cost
+
+
 def _decide_proposal(
     deps: Deps,
     *,
@@ -213,6 +259,11 @@ def _decide_proposal(
     account: dict,
     focus: str,
     llm_name: str,
+    served_by: str,
+    fallback_reason: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: Decimal | None,
     labels: list[str],
     trace_id: str,
     tools: list[str],
@@ -220,15 +271,20 @@ def _decide_proposal(
     base = {
         "actor": None,
         "approved": False,
+        "cost_usd": _cost_text(cost_usd),
         "created_at": deps.clock.now().isoformat(),
+        "fallback_reason": fallback_reason,
         "fill": None,
         "focus": focus,
         "id": str(uuid.uuid4()),
         "injection_labels": labels,
         "injection_suspected": bool(labels),
+        "input_tokens": input_tokens,
         "llm": llm_name,
+        "output_tokens": output_tokens,
         "plan": None,
         "plan_hash": None,
+        "served_by": served_by,
         "policy_ok": False,
         "read_tools": tools,
         "token_issued": False,
@@ -308,9 +364,14 @@ def _audit_proposal(deps: Deps, record: dict) -> None:
         {
             "decision": record["decision"],
             "event": "proposal",
+            "cost_usd": record.get("cost_usd"),
+            "fallback_reason": record.get("fallback_reason") or "",
             "injection_suspected": record["injection_suspected"],
+            "input_tokens": record.get("input_tokens"),
             "llm": record["llm"],
+            "output_tokens": record.get("output_tokens"),
             "plan_hash": record.get("plan_hash"),
+            "served_by": record.get("served_by"),
             "proposal_id": record["id"],
             "rationale": record.get("rationale"),
             "reasons": record.get("reasons") or [],
@@ -319,6 +380,15 @@ def _audit_proposal(deps: Deps, record: dict) -> None:
             "trace_id": record.get("trace_id"),
         }
     )
+
+
+def _cost_text(cost: Decimal | None) -> str | None:
+    if cost is None:
+        return None
+    text = format(cost.quantize(Decimal("0.0000000001")), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
 
 
 def _current_snapshots(deps: Deps) -> list[Snapshot]:

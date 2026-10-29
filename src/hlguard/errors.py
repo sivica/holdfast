@@ -35,4 +35,7 @@ class LiveTradingError(HoldfastError):
 
 
 class LLMError(HoldfastError):
-    pass
+    def __init__(self, message: str, *, retryable: bool = False, retry_after: float | None = None):
+        self.retryable = retryable
+        self.retry_after = retry_after
+        super().__init__(message)

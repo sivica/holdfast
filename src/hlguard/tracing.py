@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 from opentelemetry import trace
@@ -66,12 +67,7 @@ def tracer():
 def _span_dict(span) -> dict:
     context = span.context
     parent = span.parent
-    attributes = {}
-    for key, value in (span.attributes or {}).items():
-        if isinstance(value, str):
-            attributes[key] = redact(value)
-        else:
-            attributes[key] = value
+    attributes = {key: _jsonable(value) for key, value in (span.attributes or {}).items()}
     return {
         "name": span.name,
         "trace_id": format(context.trace_id, "032x"),
@@ -80,3 +76,13 @@ def _span_dict(span) -> dict:
         "status": span.status.status_code.name,
         "attributes": attributes,
     }
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, bool) or value is None or isinstance(value, int | float):
+        return value
+    if isinstance(value, Sequence):
+        return [_jsonable(item) for item in value]
+    return redact(str(value))

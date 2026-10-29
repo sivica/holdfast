@@ -18,7 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 live = ["hyperliquid-python-sdk>=0.16", "eth-account>=0.13"]
-dev = ["pytest>=8", "ruff>=0.6"]
+anthropic = ["anthropic>=2.3,<3"]
+dev = ["pytest>=8", "ruff>=0.6", "anthropic>=2.3,<3"]
 
 [project.scripts]
 holdfast = "hlguard.cli:main"

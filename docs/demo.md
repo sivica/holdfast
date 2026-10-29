@@ -1,6 +1,6 @@
 # Demo
 
-Terminal output from one offline run of the committed suite and the injection drill. Both processes exited 0. Stderr was empty. No API key was set, and neither command used `--live`.
+Terminal output from one offline run of the committed suite and the injection drill, captured from commit `f86b5f1cd79a56f4fa4b17019cb945e38ac96acc`. Both processes exited 0. Stderr was empty. No API key was set, and neither command used `--live`. The drill footer is from that tree: later counters such as token totals and `llm_cost_usd` are not in this transcript.
 
 `make eval` is `python3 -m hlguard eval --fail-under-baseline`. The drill is the command in the README:
 

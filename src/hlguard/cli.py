@@ -86,7 +86,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     deps = build_deps(_path(args.config), _path(args.data_dir))
     if args.live:
         os.environ["HLGUARD_MARKET_SOURCE"] = "live"
-        provider = build_provider(args.llm or "mock")
+        llm_name = _selected_llm(args.llm)
+        provider = build_provider(llm_name)
         record = run_cycle(
             deps,
             provider=provider,
@@ -99,15 +100,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 )
             ],
             focus=args.ticker,
-            llm_name=args.llm or "mock",
+            llm_name=llm_name,
         )
     else:
         os.environ["HLGUARD_MARKET_SOURCE"] = "file"
         scenario = _scenario(args.scenario)
-        llm_name = args.llm or scenario["llm"]
+        llm_name = _selected_llm(args.llm, scenario["llm"])
         record = run_cycle(
             deps,
-            provider=build_provider("mock" if llm_name == "guarded" else llm_name),
+            provider=build_provider(llm_name),
             snapshots=[Snapshot.from_dict(item) for item in scenario["markets"]],
             news=[NewsItem(**item) for item in scenario["news"]],
             focus=scenario["focus"],
@@ -169,6 +170,15 @@ def _print_record(record: dict) -> None:
     print(f"status     {status}")
     print(f"ticker     {record.get('ticker')}")
     print(f"llm        {record.get('llm')}")
+    if record.get("served_by"):
+        print(f"served by  {record.get('served_by')}")
+    if record.get("fallback_reason"):
+        print(f"fallback   {record.get('fallback_reason')}")
+    if record.get("input_tokens") is not None:
+        print(f"tokens     {record.get('input_tokens')} in / {record.get('output_tokens')} out")
+    if "cost_usd" in record:
+        cost = record.get("cost_usd")
+        print(f"cost usd   {'omitted' if cost is None else cost}")
     if record.get("injection_suspected"):
         print(f"injection  suspected ({', '.join(record.get('injection_labels') or [])})")
     if record.get("read_tools"):
@@ -198,8 +208,25 @@ def _print_record(record: dict) -> None:
 def _print_footer(deps) -> None:
     print("metrics")
     for key, value in deps.metrics.snapshot().items():
-        print(f"  {key} {value}")
+        print(f"  {key} {_format_metric(key, value)}")
     print(f"audit chain {'ok' if deps.audit.verify() else 'BROKEN'}  ({deps.audit.path})")
+
+
+def _format_metric(key: str, value: object) -> str:
+    if key == "llm_cost_usd":
+        text = f"{float(value):.10f}".rstrip("0").rstrip(".")
+        return text or "0"
+    return str(value)
+
+
+def _selected_llm(explicit: str | None, scenario: str | None = None) -> str:
+    """Scenario runs: flag, then the scenario's model, then HLGUARD_LLM. Live runs skip the scenario."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    if scenario and str(scenario).strip():
+        return str(scenario).strip()
+    env = os.environ.get("HLGUARD_LLM", "").strip()
+    return env or "mock"
 
 
 def _prompt() -> str | None:

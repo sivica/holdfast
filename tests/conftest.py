@@ -22,6 +22,18 @@ def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("HYPERLIQUID_API_WALLET_KEY", raising=False)
     monkeypatch.delenv("HLGUARD_ACCOUNT_ADDRESS", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_MAX_TOKENS", raising=False)
+    monkeypatch.delenv("HLGUARD_LLM", raising=False)
+    monkeypatch.delenv("HLGUARD_LLM_PROVIDERS", raising=False)
+    monkeypatch.delenv("HLGUARD_LLM_TIMEOUT", raising=False)
+    monkeypatch.delenv("HLGUARD_LLM_RETRIES", raising=False)
+    monkeypatch.delenv("HLGUARD_ROUTER_ALLOW_MOCK", raising=False)
+    monkeypatch.delenv("HLGUARD_PRICING", raising=False)
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
 
 
