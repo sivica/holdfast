@@ -1,0 +1,16 @@
+[
+  {
+    "universe": [
+      {"maxLeverage": 10, "name": "xyz:NVDA", "onlyIsolated": true, "szDecimals": 3}
+    ]
+  },
+  [
+    {
+      "funding": "-0.00004",
+      "markPx": "131.4",
+      "openInterest": "50",
+      "oraclePx": "131.5",
+      "prevDayPx": "127.2"
+    }
+  ]
+]

@@ -1,0 +1,26 @@
+services:
+  holdfast:
+    build: .
+    ports:
+      - "8741:8741"
+    environment:
+      HLGUARD_VENUE: paper
+      HLGUARD_MARKET_SOURCE: file
+      HLGUARD_ROOT: /app
+    volumes:
+      - holdfast-data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8741/health')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  holdfast-data:

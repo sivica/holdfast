@@ -1,0 +1,12 @@
+{
+  "venue": "paper",
+  "allow_mainnet": false,
+  "max_notional_usd": "15.00",
+  "daily_loss_cap_usd": "30.00",
+  "max_loss_per_trade_usd": "5.00",
+  "slippage_bps": "5",
+  "approval_ttl_seconds": 600,
+  "allowlist": ["BTC", "ETH", "SOL", "xyz:TSLA", "xyz:NVDA", "xyz:AAPL"],
+  "info_url": "https://api.hyperliquid.xyz",
+  "testnet_info_url": "https://api.hyperliquid-testnet.xyz"
+}

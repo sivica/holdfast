@@ -1,0 +1,16 @@
+[
+  {
+    "universe": [
+      {"maxLeverage": 40, "name": "BTC", "onlyIsolated": false, "szDecimals": 5}
+    ]
+  },
+  [
+    {
+      "funding": "0.0000125",
+      "markPx": "64000.0",
+      "openInterest": "1000",
+      "oraclePx": "64010.0",
+      "prevDayPx": "65000.0"
+    }
+  ]
+]

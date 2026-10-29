@@ -1,0 +1,58 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Local env files. .env.example is the committed template.
+.env
+.env.*
+!.env.example
+.envrc
+
+# Runtime state. The default directory is data/. These names are ignored
+# anywhere so a custom HLGUARD_DATA_DIR inside the repo is not committed.
+data/
+approval_secret
+approval_nonces.json
+audit.jsonl
+traces.jsonl
+paper.json
+proposals.json
+metrics.json
+market.json
+news.json
+flash.txt
+
+# Terraform local state and variable files (may contain project ids).
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*.auto.tfvars
+*.auto.tfvars.json
+terraform.tfvars
+terraform.tfvars.json
+
+# Credential material.
+*.pem
+*.key
+id_rsa
+id_rsa.*
+credentials.json
+*-credentials.json
+service-account*.json
+
+uploads/
+agent-tools/

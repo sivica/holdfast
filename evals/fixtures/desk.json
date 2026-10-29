@@ -1,0 +1,53 @@
+{
+  "note": "Fixed desk snapshot for the offline demo and evals. Not a live quote.",
+  "snapshots": [
+    {
+      "dex": "",
+      "funding": "0.00012",
+      "mark": "64210.00",
+      "prev_day": "67100.00",
+      "sz_decimals": 5,
+      "ticker": "BTC"
+    },
+    {
+      "dex": "",
+      "funding": "0.00001",
+      "mark": "3240.50",
+      "prev_day": "3234.00",
+      "sz_decimals": 4,
+      "ticker": "ETH"
+    },
+    {
+      "dex": "",
+      "funding": "0.00008",
+      "mark": "148.20",
+      "prev_day": "151.40",
+      "sz_decimals": 2,
+      "ticker": "SOL"
+    },
+    {
+      "dex": "xyz",
+      "funding": "0.00003",
+      "mark": "248.10",
+      "prev_day": "250.00",
+      "sz_decimals": 3,
+      "ticker": "xyz:TSLA"
+    },
+    {
+      "dex": "xyz",
+      "funding": "-0.00004",
+      "mark": "131.40",
+      "prev_day": "127.20",
+      "sz_decimals": 3,
+      "ticker": "xyz:NVDA"
+    },
+    {
+      "dex": "xyz",
+      "funding": "0.00002",
+      "mark": "227.80",
+      "prev_day": "226.90",
+      "sz_decimals": 3,
+      "ticker": "xyz:AAPL"
+    }
+  ]
+}
