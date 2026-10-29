@@ -119,10 +119,14 @@ def run_cycle(
             started = time.perf_counter()
             try:
                 completion = as_completion(provider.complete(messages))
-            except LLMError as exc:
-                deps.metrics.observe("llm_call_latency_seconds", time.perf_counter() - started)
-                llm_span.set_attribute("holdfast.llm.error", redact(str(exc))[:500])
+            except Exception as exc:
+                deps.metrics.observe("llm_call_latency_seconds", max(0.0, time.perf_counter() - started))
+                if isinstance(exc, LLMError):
+                    llm_span.set_attribute("holdfast.llm.error", redact(str(exc))[:500])
+                else:
+                    llm_span.set_attribute("holdfast.llm.error", "llm call failed")
                 raise
+            deps.metrics.observe("llm_call_latency_seconds", max(0.0, time.perf_counter() - started))
             cost = _observe_llm(llm_span, deps, completion)
             raw = completion.text
         record = _decide_proposal(
@@ -236,12 +240,11 @@ def _observe_llm(span, deps: Deps, completion: Completion) -> Decimal | None:
         span.set_attribute("gen_ai.request.temperature", float(usage.temperature))
     if usage.max_tokens is not None:
         span.set_attribute("gen_ai.request.max_tokens", int(usage.max_tokens))
-    span.set_attribute("holdfast.llm.latency_ms", float(usage.latency_ms))
+    span.set_attribute("holdfast.llm.provider_latency_ms", float(usage.latency_ms))
     span.set_attribute("holdfast.llm.provider", completion.provider)
     span.set_attribute("holdfast.llm.fallback", bool(completion.fallback_reason))
     if completion.fallback_reason:
         span.set_attribute("holdfast.llm.fallback_reason", completion.fallback_reason)
-    deps.metrics.observe("llm_call_latency_seconds", max(0.0, float(usage.latency_ms)) / 1000.0)
     deps.metrics.inc("llm_input_tokens", int(usage.input_tokens))
     deps.metrics.inc("llm_output_tokens", int(usage.output_tokens))
     cost = quote_usd(usage.model, usage.response_model, usage.input_tokens, usage.output_tokens)

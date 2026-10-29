@@ -85,8 +85,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     deps = build_deps(_path(args.config), _path(args.data_dir))
     if args.live:
-        os.environ["HLGUARD_MARKET_SOURCE"] = "live"
         llm_name = _selected_llm(args.llm)
+        if llm_name.strip().lower() == "gullible":
+            print(
+                "The gullible model is an offline test double and cannot be used with --live.",
+                file=sys.stderr,
+            )
+            return 2
+        os.environ["HLGUARD_MARKET_SOURCE"] = "live"
         provider = build_provider(llm_name)
         record = run_cycle(
             deps,

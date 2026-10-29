@@ -299,6 +299,15 @@ class RouterProvider:
                     failure = LLMError(f"{name} request failed")
                 else:
                     return result.with_route(provider=name, fallback_reason="; ".join(errors))
+                if failure.retryable and failure.retry_after is not None and failure.retry_after > _BACKOFF_CAP_SECONDS:
+                    message = redact(str(failure))
+                    reason = (
+                        f"{name}: {message}; retry-after {failure.retry_after:g}s "
+                        f"exceeds the {_BACKOFF_CAP_SECONDS:.0f}s cap"
+                    )
+                    _LOG.warning("provider %s skipped: %s", name, reason)
+                    errors.append(reason)
+                    break
                 if failure.retryable and attempt <= self.retries:
                     self._sleep(backoff_delay(attempt, failure.retry_after, self._rng))
                     continue
@@ -334,7 +343,12 @@ def _reject_router_name(name: str) -> None:
 
 
 def backoff_delay(attempt: int, retry_after: float | None, rng: random.Random) -> float:
-    """Seconds to wait before another try. Exponential, jittered, capped, and at least Retry-After."""
+    """Seconds to wait before another try of the same provider.
+
+    Exponential, with jitter, and at least a Retry-After that fits under the cap.
+    The router does not call this when Retry-After is longer than the cap. It skips
+    that provider instead of waiting a shortened interval.
+    """
     exponent = max(0, attempt - 1)
     delay = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2**exponent))
     jittered = delay * (0.5 + rng.random() * 0.5)

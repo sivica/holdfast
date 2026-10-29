@@ -216,7 +216,7 @@ def test_guarded_mock_records_fixed_usage(deps, capsys) -> None:
     assert attrs["holdfast.llm.provider"] == "guarded"
     assert attrs["holdfast.llm.fallback"] is False
     assert attrs["holdfast.cost_usd"] == 0
-    assert attrs["holdfast.llm.latency_ms"] >= 0
+    assert attrs["holdfast.llm.provider_latency_ms"] >= 0
     snap = deps.metrics.snapshot()
     assert snap["llm_input_tokens"] == OFFLINE_INPUT_TOKENS
     assert snap["llm_output_tokens"] == GUARDED_OUTPUT_TOKENS
@@ -640,6 +640,140 @@ def test_desk_shows_the_serving_provider(deps, monkeypatch) -> None:
     assert "place_order" not in record["read_tools"]
 
 
+def test_live_refuses_gullible_from_the_flag(deps, capsys) -> None:
+    from hlguard.cli import run
+
+    code = run(
+        [
+            "run",
+            "--live",
+            "--llm",
+            "gullible",
+            "--data-dir",
+            str(deps.data_dir),
+            "--config",
+            str(deps.config_path),
+        ]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "gullible" in err
+    assert "--live" in err
+    assert deps.broker.view()["positions"] == []
+    assert not (deps.data_dir / "proposals.json").exists()
+
+
+def test_live_refuses_gullible_from_the_env(deps, monkeypatch, capsys) -> None:
+    from hlguard.cli import run
+
+    monkeypatch.setenv("HLGUARD_LLM", "gullible")
+    code = run(
+        [
+            "run",
+            "--live",
+            "--data-dir",
+            str(deps.data_dir),
+            "--config",
+            str(deps.config_path),
+        ]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "gullible" in err
+    assert "--live" in err
+    assert deps.broker.view()["positions"] == []
+    assert not (deps.data_dir / "proposals.json").exists()
+
+
+def test_retry_after_above_the_cap_skips_without_sleeping() -> None:
+    slept: list[float] = []
+
+    class Slow:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, messages):
+            self.calls += 1
+            raise LLMError("openai request failed: 429", retryable=True, retry_after=45)
+
+    class Ok:
+        def complete(self, messages):
+            return _completion(HOLD, model="claude-sonnet-4-6", system="anthropic", provider="anthropic")
+
+    slow = Slow()
+    router = RouterProvider(
+        [("openai", slow), ("anthropic", Ok())],
+        retries=3,
+        timeout=1,
+        sleep=slept.append,
+    )
+    result = router.complete([{"role": "user", "content": "hi"}])
+    assert slow.calls == 1
+    assert slept == []
+    assert result.provider == "anthropic"
+    assert "45" in result.fallback_reason
+    assert "exceeds the 30s cap" in result.fallback_reason
+
+    alone = Slow()
+    with pytest.raises(LLMError, match="exceeds the 30s cap") as caught:
+        RouterProvider([("openai", alone)], retries=3, timeout=1, sleep=slept.append).complete(
+            [{"role": "user", "content": "hi"}]
+        )
+    assert alone.calls == 1
+    assert slept == []
+    assert "45" in str(caught.value)
+
+
+def test_histogram_times_the_whole_call_including_backoff(deps) -> None:
+    import time
+
+    class Flaky:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                raise LLMError("openai request timed out", retryable=True)
+            return _completion(
+                HOLD,
+                model="gpt-4o-mini",
+                system="openai",
+                provider="openai",
+            )
+
+    def pause(_seconds: float) -> None:
+        time.sleep(0.05)
+
+    flaky = Flaky()
+    router = RouterProvider([("openai", flaky)], retries=1, timeout=1, sleep=pause)
+    record = _run(deps, router, "eth_hold", "router")
+    assert record["status"] == "hold"
+    assert flaky.calls == 2
+    attrs = _span(deps, "holdfast.llm")["attributes"]
+    assert attrs["holdfast.llm.provider_latency_ms"] == pytest.approx(1.5)
+    text = deps.metrics.render_prometheus()
+    assert "holdfast_llm_call_latency_seconds_count 1\n" in text
+    total = _histogram_sum(text)
+    assert total >= 0.04
+    assert total < 2
+
+
+def test_histogram_times_a_non_llm_error(deps) -> None:
+    class Boom:
+        def complete(self, messages):
+            raise RuntimeError("not an llm error")
+
+    with pytest.raises(RuntimeError, match="not an llm error"):
+        _run(deps, Boom(), "eth_hold", "boom")
+    text = deps.metrics.render_prometheus()
+    assert "holdfast_llm_call_latency_seconds_count 1\n" in text
+    attrs = _span(deps, "holdfast.llm")["attributes"]
+    assert attrs["holdfast.llm.error"] == "llm call failed"
+    assert deps.broker.view()["positions"] == []
+    assert deps.metrics.snapshot().get("tool.place_order", 0) == 0
+
+
 def test_router_rejects_gullible_even_when_mock_is_allowed(monkeypatch) -> None:
     monkeypatch.setenv("HLGUARD_ROUTER_ALLOW_MOCK", "1")
     with pytest.raises(LLMError, match="gullible"):
@@ -656,6 +790,12 @@ def _run(deps, provider, scenario_id: str, llm_name: str) -> dict:
         focus=scenario["focus"],
         llm_name=llm_name,
     )
+
+
+def _histogram_sum(text: str) -> float:
+    marker = "holdfast_llm_call_latency_seconds_sum "
+    line = next(item for item in text.splitlines() if item.startswith(marker))
+    return float(line.removeprefix(marker))
 
 
 def _spans(deps) -> list[dict]:
