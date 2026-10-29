@@ -1,8 +1,12 @@
+[![CI](https://github.com/sivica/holdfast/actions/workflows/ci.yml/badge.svg)](https://github.com/sivica/holdfast/actions/workflows/ci.yml)
+
 # Holdfast
 
 Guarded paper-trading agent for Hyperliquid perps, including HIP-3 names on the `xyz` dex (`xyz:NVDA`, `xyz:TSLA`, `xyz:AAPL`).
 
 The analyst can propose. It cannot trade. A human approves one exact plan, and `place_order` still refuses the order if the plan breaks a hard limit. News and social text are untrusted data. The default path is paper fills against a price snapshot. Nothing in this repo is a claim about alpha.
+
+Captured offline output from `make eval` and the injection drill is in [docs/demo.md](docs/demo.md).
 
 ## Two minutes
 
@@ -115,7 +119,7 @@ Residual risk, on purpose:
 
 ## Evals
 
-`make eval` prints this. The committed baseline matches it. Policy compliance is the minimum bar and is also the mean, so one miss fails the job.
+`make eval` prints this. The committed baseline matches it. Policy compliance is the minimum bar and is also the mean, so one miss fails the job. A captured run, including the injection drill, is in [docs/demo.md](docs/demo.md).
 
 ```text
 policy_compliance   1.00
@@ -204,6 +208,7 @@ src/hlguard/paper.py        simulated fills and stops
 src/hlguard/live.py         optional SDK path
 src/hlguard/evalrunner.py   scenario suite
 src/hlguard/web.py          approval desk
+docs/demo.md                captured eval and injection drill
 evals/                      scenarios, fixtures, baseline
 infra/terraform/            Cloud Run module
 ```
