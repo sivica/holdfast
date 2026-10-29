@@ -5,12 +5,13 @@ import os
 import secrets
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from hlguard.agent import run_cycle
 from hlguard.errors import ApprovalError, HoldfastError, PolicyError
 from hlguard.evalrunner import load_scenarios
 from hlguard.llm import GuardedMock, GullibleMock
+from hlguard.metrics import content_type
 from hlguard.models import NewsItem, Snapshot
 from hlguard.news import load_news
 from hlguard.redact import redact
@@ -45,7 +46,13 @@ def create_app(deps: Deps) -> FastAPI:
         return {"ok": True, "service": "holdfast", "venue": deps.settings.venue}
 
     @app.get("/metrics")
-    def metrics() -> dict:
+    def metrics() -> Response:
+        response = Response(content=deps.metrics.render_prometheus(), media_type="text/plain")
+        response.headers["Content-Type"] = content_type()
+        return response
+
+    @app.get("/metrics.json")
+    def metrics_json() -> dict:
         return deps.metrics.snapshot()
 
     @app.get("/audit")

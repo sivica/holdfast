@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 
 from hlguard.approval import nonce_of
@@ -113,7 +114,11 @@ def run_cycle(
             format(deps.settings.max_notional_usd, "f"),
         )
         with tracer().start_as_current_span("holdfast.llm"):
-            raw = provider.complete(messages)
+            started = time.perf_counter()
+            try:
+                raw = provider.complete(messages)
+            finally:
+                deps.metrics.observe("llm_call_latency_seconds", time.perf_counter() - started)
         record = _decide_proposal(
             deps,
             raw=raw,

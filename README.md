@@ -149,7 +149,7 @@ Snapshots and news are files under `evals/fixtures` and `evals/scenarios.json`. 
 
 Each cycle writes spans to `data/traces.jsonl`: `holdfast.cycle`, `holdfast.mcp.read`, `holdfast.llm`, `holdfast.policy`, and `holdfast.mcp.trade`. Tool spans from the MCP process land in the same file. Attributes carry the decision, the plan hash, and injection labels. They do not carry the news body or the token.
 
-The CLI prints a metrics summary. `GET /metrics` and `GET /audit` return the same counters and the hash-chained log. `python3 -m hlguard audit-verify` checks the chain.
+The CLI prints a metrics summary. `GET /metrics.json` returns those counters as JSON, the same map the desk and the CLI read. `GET /metrics` serves Prometheus text exposition (`text/plain; version=0.0.4`). Counter names stay snake_case with a `holdfast_` prefix and a `_total` suffix (`holdfast_proposals_total` for orders proposed, `holdfast_approvals_total`, `holdfast_rejections_total`, `holdfast_policy_denials_total`, and the rest of the stored counters). Tool calls are one series, `holdfast_tool_calls_total{tool="..."}`. LLM `complete()` latency is the histogram `holdfast_llm_call_latency_seconds`. `GET /audit` returns the hash-chained log. `python3 -m hlguard audit-verify` checks the chain.
 
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` to also export OTLP/HTTP. The JSONL file is written either way.
 
